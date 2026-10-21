@@ -15,6 +15,42 @@ SECRET = os.getenv('SESSION_SECRET', '')
 if len(SECRET) < 32:
     raise RuntimeError('Configura SESSION_SECRET con al menos 32 caracteres aleatorios.')
 Base.metadata.create_all(engine)  # V0.1; migraciones formales antes de producción
+
+# Inicialización del primer administrador
+def crear_administrador_inicial():
+    email = os.getenv("ADMIN_EMAIL", "").strip().lower()
+    nombre = os.getenv("ADMIN_NAME", "Administrador Sandazo").strip()
+    password = os.getenv("ADMIN_PASSWORD", "")
+
+    if not email or not password:
+        return
+
+    if "@" not in email or len(password) < 12:
+        raise RuntimeError("Revisa ADMIN_EMAIL y ADMIN_PASSWORD en Render.")
+
+    with SessionLocal() as db:
+        existente = db.scalar(select(User).where(User.email == email))
+
+        if existente:
+            return
+
+        cantidad_usuarios = db.scalar(select(func.count()).select_from(User))
+        if cantidad_usuarios > 0:
+            raise RuntimeError("Ya existen usuarios. No se creará otro administrador inicial.")
+
+        administrador = User(
+            email=email,
+            full_name=nombre,
+            password_hash=hash_password(password),
+            is_superadmin=True
+        )
+
+        db.add(administrador)
+        db.commit()
+        print("Administrador inicial creado correctamente.")
+
+crear_administrador_inicial()
+
 app = FastAPI(title='Sandazo Contable V0.1.1', docs_url=None, redoc_url=None)
 app.add_middleware(SessionMiddleware, secret_key=SECRET, session_cookie='sandazo_session', same_site='lax', https_only=os.getenv('COOKIE_SECURE','0') == '1', max_age=60*60*8)
 app.mount('/static', StaticFiles(directory='static'), name='static')
